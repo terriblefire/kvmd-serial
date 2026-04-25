@@ -24,16 +24,15 @@ jobs:
             files/ install.sh uninstall.sh PKGBUILD kvmd-serial.install LICENSE README.md
 
       - name: Build Arch package
-        uses: docker://archlinux:latest
-        with:
-          args: /bin/bash -c "
-            pacman -Sy --noconfirm base-devel fakeroot &&
-            useradd -m builder &&
-            cp -r . /home/builder/pkg &&
-            chown -R builder: /home/builder/pkg &&
-            su builder -c 'cd /home/builder/pkg && makepkg -f --nodeps' &&
-            cp /home/builder/pkg/kvmd-serial-*.pkg.tar.* dist/
-            "
+        run: |
+          docker run --rm -v "$PWD:/src" archlinux:latest /bin/bash -c '
+            pacman -Sy --noconfirm base-devel fakeroot
+            useradd -m builder
+            cp -r /src /home/builder/pkg
+            chown -R builder: /home/builder/pkg
+            su builder -c "cd /home/builder/pkg && makepkg -f --nodeps"
+            cp /home/builder/pkg/kvmd-serial-*.pkg.tar.* /src/dist/
+          '
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
