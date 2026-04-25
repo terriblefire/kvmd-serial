@@ -2,6 +2,8 @@
 
 Serial console plugin for [PiKVM](https://pikvm.org). Adds a fully interactive serial port terminal to the PiKVM web UI with ANSI escape code support via [xterm.js](https://xtermjs.org/).
 
+![Serial Console Screenshot](screenshot.png)
+
 ## Features
 
 - Real-time serial port I/O streamed over WebSocket
