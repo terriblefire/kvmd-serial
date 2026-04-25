@@ -1,0 +1,59 @@
+post_install() {
+	echo "==> PiKVM Serial Console Plugin installed."
+	echo ""
+	echo "    To enable, add to /etc/kvmd/override.yaml:"
+	echo ""
+	echo "    kvmd:"
+	echo "        serial:"
+	echo "            type: tty"
+	echo "            device: /dev/ttyUSB0"
+	echo "            speed: 115200"
+	echo ""
+	echo "    Then run the post-install patch and restart:"
+	echo "        kvmd-serial-patch"
+	echo "        systemctl restart kvmd"
+	echo ""
+
+	_patch
+}
+
+post_upgrade() {
+	_patch
+}
+
+pre_remove() {
+	echo "==> Restoring kvmd files from backups..."
+	local _py="/usr/lib/python3.14/site-packages/kvmd"
+	local _web="/usr/share/kvmd/web"
+	for f in \
+		"$_py/apps/kvmd/server.py" \
+		"$_py/apps/kvmd/__init__.py" \
+		"$_py/apps/_scheme.py" \
+		"$_web/share/js/kvm/session.js" \
+		"$_web/kvm/index.html"; do
+		if [ -f "${f}.pre-serial" ]; then
+			cp "${f}.pre-serial" "$f"
+			rm "${f}.pre-serial"
+		fi
+	done
+	systemctl restart kvmd 2>/dev/null || true
+}
+
+_patch() {
+	local _py="/usr/lib/python3.14/site-packages/kvmd"
+	local _web="/usr/share/kvmd/web"
+
+	# Backup originals (only if no backup exists yet)
+	for f in \
+		"$_py/apps/kvmd/server.py" \
+		"$_py/apps/kvmd/__init__.py" \
+		"$_py/apps/_scheme.py" \
+		"$_web/share/js/kvm/session.js" \
+		"$_web/kvm/index.html"; do
+		if [ ! -f "${f}.pre-serial" ]; then
+			cp "$f" "${f}.pre-serial"
+		fi
+	done
+
+	python3 /usr/share/kvmd-serial/patch.py
+}
