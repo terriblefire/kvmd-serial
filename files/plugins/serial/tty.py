@@ -58,6 +58,11 @@ class Plugin(BaseSerial):
         self.__speed = speed
         self.__read_timeout = read_timeout
         self.__poll_interval = poll_interval
+        self.__state_path = "/var/lib/kvmd/serial-speed"
+
+        saved = self.__load_speed()
+        if saved is not None:
+            self.__speed = saved
 
         self.__serial: (serial.Serial | None) = None
         self.__online = False
@@ -121,6 +126,7 @@ class Plugin(BaseSerial):
 
     async def set_speed(self, speed: int) -> None:
         self.__speed = speed
+        self.__save_speed(speed)
         self.__close()
         self.__notifier.notify()
 
@@ -255,6 +261,21 @@ class Plugin(BaseSerial):
             get_logger().exception("Serial read error")
             self.__close()
             return ""
+
+    def __load_speed(self) -> (int | None):
+        try:
+            with open(self.__state_path, "r") as f:
+                return int(f.read().strip())
+        except Exception:
+            return None
+
+    def __save_speed(self, speed: int) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.__state_path), exist_ok=True)
+            with open(self.__state_path, "w") as f:
+                f.write(str(speed))
+        except Exception:
+            get_logger().warning("Could not save serial speed to %s", self.__state_path)
 
     def __close(self) -> None:
         if self.__serial:
