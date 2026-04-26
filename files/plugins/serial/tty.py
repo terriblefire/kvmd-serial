@@ -219,6 +219,13 @@ class Plugin(BaseSerial):
                     buf += text
                     get_logger().info("Upload RX: %r", text)
                     if marker in buf:
+                        # Drain any trailing bytes still arriving
+                        time.sleep(0.05)
+                        while self.__serial.in_waiting:
+                            extra = self.__serial.read(self.__serial.in_waiting)
+                            if extra:
+                                buf += extra.decode("ascii", errors="replace")
+                            time.sleep(0.01)
                         transcript.append(f"RX: {buf.rstrip()}")
                         return buf
         finally:
