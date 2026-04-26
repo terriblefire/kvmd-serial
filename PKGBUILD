@@ -1,7 +1,7 @@
 # Maintainer: Stephen Sheridan <stephen@terriblefire.com>
 
 pkgname=kvmd-serial
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Serial console plugin for PiKVM - adds serial port streaming with ANSI terminal UI"
 url="https://github.com/terriblefire/kvmd"
