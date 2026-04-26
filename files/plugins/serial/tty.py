@@ -63,6 +63,7 @@ class Plugin(BaseSerial):
         self.__online = False
         self.__buffer = ""
         self.__notifier = aiotools.AioNotifier()
+        self.__upload_lock = asyncio.Lock()
 
     @classmethod
     def get_plugin_options(cls) -> dict:
@@ -87,7 +88,11 @@ class Plugin(BaseSerial):
     async def poll_state(self) -> AsyncGenerator[dict, None]:
         while True:
             self.__try_connect()
-            data = self.__try_read()
+
+            if not self.__upload_lock.locked():
+                data = self.__try_read()
+            else:
+                data = ""
 
             yield await self.get_state()
 
@@ -123,67 +128,97 @@ class Plugin(BaseSerial):
         if not self.__serial or not self.__online:
             return {"error": "serial port not connected"}
 
-        t0 = time.monotonic()
-        records = _make_srecords(address, data)
+        logger = get_logger()
+        transcript = []
 
-        # Wait for monitor prompt
-        prompt = await self.__read_until(">", timeout=5.0)
-        if prompt is None:
-            return {"error": "timeout waiting for monitor prompt"}
+        async with self.__upload_lock:
+            # Drain any buffered data the poll loop hasn't consumed
+            await asyncio.sleep(self.__poll_interval * 2)
+            if self.__serial and self.__serial.in_waiting:
+                drained = self.__serial.read(self.__serial.in_waiting)
+                logger.info("Upload: drained %d bytes", len(drained))
 
-        # Send each S-record
-        for record in records:
-            await self.__write_line(record)
-            ack = await self.__read_until("OK", timeout=2.0)
-            if ack is None:
-                return {"error": f"timeout waiting for OK after record"}
+            t0 = time.monotonic()
+            records = _make_srecords(address, data)
+            logger.info("Upload: %d bytes -> %d S-records to address %08X", len(data), len(records), address)
 
-        output = ""
+            # Send CR to trigger a fresh prompt
+            self.__serial_write_raw(b"\r")
+            transcript.append("TX: \\r")
 
-        # Call (JSR)
-        if call:
-            cmd = f"c {address:08X}\r"
-            await self.__write_line(cmd)
-            resp = await self.__read_until("OK", timeout=10.0)
-            output = resp or ""
+            # Wait for monitor prompt
+            prompt = self.__read_until_sync(">", timeout=5.0, transcript=transcript)
+            if prompt is None:
+                return {"error": "timeout waiting for monitor prompt", "transcript": transcript}
 
-        # Go (JMP)
-        if go:
-            cmd = f"g {address:08X}\r"
-            await self.__write_line(cmd)
-            # No response expected - execution transfers
-            await asyncio.sleep(0.1)
+            # Send each S-record
+            for (i, record) in enumerate(records):
+                rec_bytes = record.encode("ascii")
+                self.__serial_write_raw(rec_bytes)
+                transcript.append(f"TX: {record.rstrip(chr(13)).rstrip(chr(10))}")
+                logger.info("Upload: sent record %d/%d", i + 1, len(records))
 
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
-        return {
-            "bytes": len(data),
-            "records": len(records),
-            "elapsed_ms": elapsed_ms,
-            "output": output,
-        }
+                # Wait for OK and then consume the prompt that follows
+                ack = self.__read_until_sync(">", timeout=2.0, transcript=transcript)
+                if ack is None:
+                    return {"error": f"timeout waiting for response after record {i+1}", "transcript": transcript}
+                if "?" in ack and "OK" not in ack:
+                    return {"error": f"monitor rejected record {i+1}", "transcript": transcript}
 
-    async def __write_line(self, line: str) -> None:
+            output = ""
+
+            # Call (JSR)
+            if call:
+                cmd = f"c {address:08X}\r"
+                self.__serial_write_raw(cmd.encode("ascii"))
+                transcript.append(f"TX: {cmd.rstrip(chr(13))}")
+                resp = self.__read_until_sync("OK", timeout=10.0, transcript=transcript)
+                output = resp or ""
+
+            # Go (JMP)
+            if go:
+                cmd = f"g {address:08X}\r"
+                self.__serial_write_raw(cmd.encode("ascii"))
+                transcript.append(f"TX: {cmd.rstrip(chr(13))}")
+                await asyncio.sleep(0.1)
+
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.info("Upload: complete in %dms", elapsed_ms)
+            return {
+                "bytes": len(data),
+                "records": len(records),
+                "elapsed_ms": elapsed_ms,
+                "output": output,
+                "transcript": transcript,
+            }
+
+    def __serial_write_raw(self, data: bytes) -> None:
         if self.__serial and self.__online:
-            line_bytes = line.encode("ascii") if not line.endswith("\r") else line.rstrip("\r").encode("ascii") + b"\r"
-            await asyncio.get_event_loop().run_in_executor(
-                None, self.__serial.write, line_bytes,
-            )
+            self.__serial.write(data)
+            self.__serial.flush()
 
-    async def __read_until(self, marker: str, timeout: float) -> (str | None):
+    def __read_until_sync(self, marker: str, timeout: float, transcript: list) -> (str | None):
         if not self.__serial or not self.__online:
             return None
         buf = ""
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            raw = await asyncio.get_event_loop().run_in_executor(
-                None, self.__serial.read, max(1, self.__serial.in_waiting),
-            )
-            if raw:
-                buf += raw.decode("ascii", errors="replace")
-                if marker in buf:
-                    return buf
-            else:
-                await asyncio.sleep(0.01)
+        saved_timeout = self.__serial.timeout
+        self.__serial.timeout = 0.5
+        try:
+            while time.monotonic() < deadline:
+                waiting = self.__serial.in_waiting
+                raw = self.__serial.read(max(1, waiting))
+                if raw:
+                    text = raw.decode("ascii", errors="replace")
+                    buf += text
+                    get_logger().info("Upload RX: %r", text)
+                    if marker in buf:
+                        transcript.append(f"RX: {buf.rstrip()}")
+                        return buf
+        finally:
+            self.__serial.timeout = saved_timeout
+        transcript.append(f"RX (timeout): {buf.rstrip()}")
+        get_logger().warning("Upload: timeout waiting for %r, got: %r", marker, buf)
         return None
 
     # =====
@@ -244,12 +279,12 @@ def _make_srecords(address: int, data: bytes, bytes_per_record: int=32) -> list[
         raw.extend(chunk)
         checksum = (~sum(raw)) & 0xFF
         raw.append(checksum)
-        records.append("S3" + "".join(f"{b:02X}" for b in raw) + "\r")
+        records.append("S3" + "".join(f"{b:02X}" for b in raw) + "\r\n")
         offset += bytes_per_record
     # S7 end record with entry address
     raw = [5]  # byte count: 4 (address) + 1 (checksum)
     raw.extend(address.to_bytes(4, "big"))
     checksum = (~sum(raw)) & 0xFF
     raw.append(checksum)
-    records.append("S7" + "".join(f"{b:02X}" for b in raw) + "\r")
+    records.append("S7" + "".join(f"{b:02X}" for b in raw) + "\r\n")
     return records
