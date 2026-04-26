@@ -44,7 +44,7 @@ kvmd:
     serial:
         type: tty
         device: /dev/ttyUSB0
-        speed: 115200
+        speed: 9600
 ```
 
 And restart: `systemctl restart kvmd`
@@ -53,7 +53,7 @@ The install script does this automatically.
 
 ## Configuration
 
-The default device is `/dev/ttyUSB0` at 115200 baud. Change in `/etc/kvmd/override.yaml`:
+The default device is `/dev/ttyUSB0` at 9600 baud. Change in `/etc/kvmd/override.yaml`:
 
 ```yaml
 kvmd:

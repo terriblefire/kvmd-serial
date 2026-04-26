@@ -96,7 +96,7 @@ class Plugin(BaseSerial):
     def get_plugin_options(cls) -> dict:
         return {
             "device":        Option("/dev/ttyUSB0", type=valid_abs_path, unpack_as="device_path"),
-            "speed":         Option(115200,         type=valid_tty_speed),
+            "speed":         Option(9600,           type=valid_tty_speed),
             "read_timeout":  Option(0.1,            type=float),
             "poll_interval": Option(0.1,            type=float),
         }
@@ -462,7 +462,8 @@ if "serial-dropdown" not in c:
                   <option value="19200">19200</option>
                   <option value="38400">38400</option>
                   <option value="57600">57600</option>
-                  <option value="115200" selected>115200</option>
+                  <option value="9600" selected>9600</option>
+                  <option value="115200">115200</option>
                 </select>
               </td>
             </tr>
@@ -533,7 +534,7 @@ if ! grep -q 'serial:' /etc/kvmd/override.yaml 2>/dev/null; then
     serial:
         type: tty
         device: /dev/ttyUSB0
-        speed: 115200
+        speed: 9600
 YAML
     echo "    Added serial config to /etc/kvmd/override.yaml"
     echo "    Edit /etc/kvmd/override.yaml to change device/speed."
@@ -550,7 +551,7 @@ echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "Open the PiKVM web UI and look for the 'Serial' button in the navbar."
-echo "Default: /dev/ttyUSB0 at 115200 baud (changeable from the UI)."
+echo "Default: /dev/ttyUSB0 at 9600 baud (changeable from the UI)."
 echo ""
 echo "To uninstall, run: curl -sSL .../uninstall.sh | sudo bash"
 echo "Or manually remove the serial sections and restart kvmd."

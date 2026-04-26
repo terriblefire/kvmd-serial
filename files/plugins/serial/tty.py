@@ -69,7 +69,7 @@ class Plugin(BaseSerial):
     def get_plugin_options(cls) -> dict:
         return {
             "device":        Option("/dev/ttyUSB0", type=valid_abs_path, unpack_as="device_path"),
-            "speed":         Option(115200,         type=valid_tty_speed),
+            "speed":         Option(9600,           type=valid_tty_speed),
             "read_timeout":  Option(0.1,            type=float),
             "poll_interval": Option(0.1,            type=float),
         }

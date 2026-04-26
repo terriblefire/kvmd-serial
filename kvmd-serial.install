@@ -7,7 +7,7 @@ post_install() {
 	echo "        serial:"
 	echo "            type: tty"
 	echo "            device: /dev/ttyUSB0"
-	echo "            speed: 115200"
+	echo "            speed: 9600"
 	echo ""
 	echo "    Then run the post-install patch and restart:"
 	echo "        kvmd-serial-patch"
