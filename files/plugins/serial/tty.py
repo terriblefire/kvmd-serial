@@ -67,6 +67,7 @@ class Plugin(BaseSerial):
         self.__serial: (serial.Serial | None) = None
         self.__online = False
         self.__buffer = ""
+        self.__console_inject = ""
         self.__notifier = aiotools.AioNotifier()
         self.__upload_lock = asyncio.Lock()
 
@@ -98,6 +99,10 @@ class Plugin(BaseSerial):
                 data = self.__try_read()
             else:
                 data = ""
+
+            if self.__console_inject:
+                data = self.__console_inject + data
+                self.__console_inject = ""
 
             yield await self.get_state()
 
@@ -190,6 +195,10 @@ class Plugin(BaseSerial):
 
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             logger.info("Upload: complete in %dms", elapsed_ms)
+
+            self.__console_inject = f"\r\n*** Upload complete: {len(data)} bytes to ${address:08X} in {elapsed_ms}ms ***\r\n"
+            self.__notifier.notify()
+
             return {
                 "bytes": len(data),
                 "records": len(records),
