@@ -528,19 +528,42 @@ PATCH_HTML
 # --- Configuration ---
 
 echo "[*] Configuring serial plugin..."
-if ! grep -q 'serial:' /etc/kvmd/override.yaml 2>/dev/null; then
-    cat >> /etc/kvmd/override.yaml << 'YAML'
+python3 << 'PATCH_YAML'
+import re
 
-    serial:
-        type: tty
-        device: /dev/ttyUSB0
-        speed: 9600
-YAML
-    echo "    Added serial config to /etc/kvmd/override.yaml"
-    echo "    Edit /etc/kvmd/override.yaml to change device/speed."
-else
-    echo "    Serial config already present in override.yaml"
-fi
+with open("/etc/kvmd/override.yaml", "r") as f:
+    content = f.read()
+
+# Check if serial config already exists under kvmd:
+if re.search(r'^kvmd:\s*\n(?:[ \t]+\w.*\n)*[ \t]+serial:\s*\n', content, re.MULTILINE):
+    print("    Serial config already present in override.yaml")
+else:
+    # Remove any stray serial: block not under kvmd:
+    content = re.sub(r'\n[ \t]+serial:\s*\n[ \t]+type: tty\n[ \t]+device:.*\n[ \t]+speed:.*\n?', '\n', content)
+
+    # Check if there's already a kvmd: section to append to
+    kvmd_match = list(re.finditer(r'^kvmd:\s*$', content, re.MULTILINE))
+    if kvmd_match:
+        # Insert after the last kvmd: block's children
+        pos = kvmd_match[-1].end()
+        # Find the end of the kvmd block (next non-indented line or EOF)
+        rest = content[pos:]
+        block_end = re.search(r'\n\S', rest)
+        if block_end:
+            insert_pos = pos + block_end.start()
+        else:
+            insert_pos = len(content)
+        serial_block = "\n    serial:\n        type: tty\n        device: /dev/ttyUSB0\n        speed: 9600\n"
+        content = content[:insert_pos] + serial_block + content[insert_pos:]
+    else:
+        # No kvmd: section, create one
+        content += "\nkvmd:\n    serial:\n        type: tty\n        device: /dev/ttyUSB0\n        speed: 9600\n"
+
+    with open("/etc/kvmd/override.yaml", "w") as f:
+        f.write(content)
+    print("    Added serial config to /etc/kvmd/override.yaml")
+    print("    Edit /etc/kvmd/override.yaml to change device/speed.")
+PATCH_YAML
 
 # --- Restart ---
 
