@@ -22,6 +22,7 @@
 
 import asyncio
 import os
+import time
 
 from typing import AsyncGenerator
 from typing import Any
@@ -118,6 +119,73 @@ class Plugin(BaseSerial):
         self.__close()
         self.__notifier.notify()
 
+    async def upload(self, address: int, data: bytes, call: bool=False, go: bool=False) -> dict:
+        if not self.__serial or not self.__online:
+            return {"error": "serial port not connected"}
+
+        t0 = time.monotonic()
+        records = _make_srecords(address, data)
+
+        # Wait for monitor prompt
+        prompt = await self.__read_until(">", timeout=5.0)
+        if prompt is None:
+            return {"error": "timeout waiting for monitor prompt"}
+
+        # Send each S-record
+        for record in records:
+            await self.__write_line(record)
+            ack = await self.__read_until("OK", timeout=2.0)
+            if ack is None:
+                return {"error": f"timeout waiting for OK after record"}
+
+        output = ""
+
+        # Call (JSR)
+        if call:
+            cmd = f"c {address:08X}\r"
+            await self.__write_line(cmd)
+            resp = await self.__read_until("OK", timeout=10.0)
+            output = resp or ""
+
+        # Go (JMP)
+        if go:
+            cmd = f"g {address:08X}\r"
+            await self.__write_line(cmd)
+            # No response expected - execution transfers
+            await asyncio.sleep(0.1)
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        return {
+            "bytes": len(data),
+            "records": len(records),
+            "elapsed_ms": elapsed_ms,
+            "output": output,
+        }
+
+    async def __write_line(self, line: str) -> None:
+        if self.__serial and self.__online:
+            line_bytes = line.encode("ascii") if not line.endswith("\r") else line.rstrip("\r").encode("ascii") + b"\r"
+            await asyncio.get_event_loop().run_in_executor(
+                None, self.__serial.write, line_bytes,
+            )
+
+    async def __read_until(self, marker: str, timeout: float) -> (str | None):
+        if not self.__serial or not self.__online:
+            return None
+        buf = ""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            raw = await asyncio.get_event_loop().run_in_executor(
+                None, self.__serial.read, max(1, self.__serial.in_waiting),
+            )
+            if raw:
+                buf += raw.decode("ascii", errors="replace")
+                if marker in buf:
+                    return buf
+            else:
+                await asyncio.sleep(0.01)
+        return None
+
     # =====
 
     def __try_connect(self) -> None:
@@ -161,3 +229,27 @@ class Plugin(BaseSerial):
                 pass
             self.__serial = None
         self.__online = False
+
+
+def _make_srecords(address: int, data: bytes, bytes_per_record: int=32) -> list[str]:
+    records = []
+    offset = 0
+    while offset < len(data):
+        chunk = data[offset:offset + bytes_per_record]
+        addr = address + offset
+        # S3: byte count = 4 (address) + len(data) + 1 (checksum)
+        byte_count = 4 + len(chunk) + 1
+        raw = [byte_count]
+        raw.extend(addr.to_bytes(4, "big"))
+        raw.extend(chunk)
+        checksum = (~sum(raw)) & 0xFF
+        raw.append(checksum)
+        records.append("S3" + "".join(f"{b:02X}" for b in raw) + "\r")
+        offset += bytes_per_record
+    # S7 end record with entry address
+    raw = [5]  # byte count: 4 (address) + 1 (checksum)
+    raw.extend(address.to_bytes(4, "big"))
+    checksum = (~sum(raw)) & 0xFF
+    raw.append(checksum)
+    records.append("S7" + "".join(f"{b:02X}" for b in raw) + "\r")
+    return records

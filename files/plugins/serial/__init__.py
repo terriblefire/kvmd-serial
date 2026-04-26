@@ -52,6 +52,9 @@ class BaseSerial(BasePlugin):
     async def set_speed(self, speed: int) -> None:
         raise NotImplementedError
 
+    async def upload(self, address: int, data: bytes, call: bool=False, go: bool=False) -> dict:
+        raise NotImplementedError
+
 
 # =====
 def get_serial_class(name: str) -> type[BaseSerial]:

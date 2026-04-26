@@ -30,6 +30,7 @@ from ....htserver import WsSession
 
 from ....plugins.serial import BaseSerial
 
+from ....validators.basic import valid_bool
 from ....validators.hw import valid_tty_speed
 
 
@@ -55,6 +56,22 @@ class SerialApi:
         speed = valid_tty_speed(req.query.get("speed"))
         await self.__serial.set_speed(speed)
         return make_json_response()
+
+    @exposed_http("POST", "/serial/upload")
+    async def __upload_handler(self, req: Request) -> Response:
+        address_str = req.query.get("address")
+        if not address_str:
+            return make_json_response({"error": "address parameter required"}, status=400)
+        address = int(address_str, 16)
+        data = await req.read()
+        if not data:
+            return make_json_response({"error": "no data in request body"}, status=400)
+        call = valid_bool(req.query.get("call", False))
+        go = valid_bool(req.query.get("go", False))
+        result = await self.__serial.upload(address, data, call=call, go=go)
+        if "error" in result:
+            return make_json_response(result, status=409)
+        return make_json_response(result)
 
     @exposed_ws("serial_write")
     async def __ws_write_handler(self, _: WsSession, event: dict) -> None:
