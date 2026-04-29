@@ -40,6 +40,10 @@ package() {
 	install -Dm644 "$startdir/files/web/xterm.css" \
 		"$pkgdir/usr/share/kvmd/web/share/css/xterm.css"
 
+	# Web UI - serial port icon
+	install -Dm644 "$startdir/files/web/led-serial.svg" \
+		"$pkgdir/usr/share/kvmd/web/share/svg/led-serial.svg"
+
 	# Patch script (used by .install hooks)
 	install -Dm644 "$startdir/files/patch.py" \
 		"$pkgdir/usr/share/kvmd-serial/patch.py"
