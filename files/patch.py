@@ -125,7 +125,7 @@ def main():
 
     if "serial-dropdown" not in content:
         serial_navbar = '''      <li class="right feature-disabled" id="serial-dropdown">
-        <div class="menu-item menu-button" href="#"><img class="led-gray" id="serial-led" src="../share/svg/led-serial.svg" style="height: 24px"><span>Serial</span>
+        <div class="menu-item menu-button" href="#"><img class="led-gray" id="serial-led" src="../share/svg/led-serial.svg" style="height: 30px"><span>Serial</span>
         </div>
         <div class="hidden menu">
           <div class="text"><b>Serial Console<br></b><sub id="serial-device-info">&nbsp;</sub></div>
